@@ -41,6 +41,7 @@ int pathType(char* path){
     return 0; //Environment variables
 }
 
+//Creates a child and use exec according to the arguments
 void runProgram(int argumentCount, char* arguments[]){
     //Fork and run
     pid_t childPID = fork();
@@ -50,6 +51,9 @@ void runProgram(int argumentCount, char* arguments[]){
     else if(childPID > 0){ //Parent process: the shell
         int childStatus;
         wait(&childStatus);
+        if(WIFSIGNALED(childStatus)){ //Child terminated by a signal
+            printf("%s\n", strsignal(WTERMSIG(childStatus))); //UNFINISHED
+        }
     }
     else{ //Child process
         if(pathType(arguments[0])){ //absolute/relative path
@@ -58,11 +62,32 @@ void runProgram(int argumentCount, char* arguments[]){
             execvp(arguments[0], arguments);
         }
         //Error! terminate the process NOT DONE YET
-        perror("3230Shell");
+        printf("3230Shell: %s\n", strerror(errno));
         exit(0); //what exit state?
     }
+}
+
+//Separate commands according to "|" piping in arguments
+void commandSeparationForPipe(int argumentCount, char* arguments[]){
 
 }
+
+//Checks if the command is an exit command. Return 0 if it is not, return 1 if it is, return 2 if it is an invalid exit command
+int isExit(int argumentCount, char* arguments[]){
+    if(strcmp(arguments[0],"exit") == 0){ //If the first argument is exit
+        if(argumentCount == 1) 
+            return 1; //Correct exit command
+        else 
+            return 2; //With arguments. Incorrect exit command
+    }
+    else
+        return 0; //Not an exit command
+}
+
+int checkTimerX(int argumentCount, char* arguments[]){
+    return 0;
+}
+
 
 int main(){
     //Initialize variables
@@ -71,8 +96,23 @@ int main(){
     
     //Main loop body
     while(1){
+        //Get input from user
         int argumentCount = getInput(arguments, input);
-        runProgram(argumentCount, arguments);
+
+        //Exit command behavior
+        int isExitCommand = isExit(argumentCount, arguments); 
+        if(isExitCommand == 1){
+            printf("3230shell: Terminated\n");
+            exit(0);
+        }
+        else if(isExitCommand == 2){
+            printf("3230shell: \"exit\" with other arguments!!!\n");
+            continue;
+        }
+
+        //Do a loop 
+            runProgram(argumentCount, arguments);
+            //pipe data exchange
 
         //Debug
         //printf("Path type:%d\n", pathType(arguments[0]));
