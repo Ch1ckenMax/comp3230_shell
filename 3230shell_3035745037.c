@@ -9,6 +9,7 @@
 #include <unistd.h>
 #include <string.h>
 #include <sys/wait.h>
+#include <sys/resource.h>
 #include <errno.h>
 
 //Prints shell message and gets input from the user. Changes the arguments array and returns the number of arguments.
@@ -41,8 +42,8 @@ int pathType(char* path){
     return 0; //Environment variables
 }
 
-//Creates a child and use exec according to the arguments
-void runProgram(int argumentCount, char* arguments[]){
+//Creates a child and use exec according to the arguments, and handle timeX command behavior
+void runProgram(int argumentCount, char* arguments[], int isTimeX){
     //Fork and run
     pid_t childPID = fork();
     if(childPID < 0){ //Creation failure
@@ -50,12 +51,23 @@ void runProgram(int argumentCount, char* arguments[]){
     }
     else if(childPID > 0){ //Parent process: the shell
         int childStatus;
-        wait(&childStatus);
+        if(isTimeX == 1){ //timeX command, check time used
+            struct rusage checkTime;
+            wait3(&childStatus, 0, &checkTime); //also gets the user&system time the child process used and store it to checkTime
+            printf("(PID)%d  (CMD)%s    (user)%0.3f s  (sys)%0.3f s\n",childPID ,arguments[1] , (float) checkTime.ru_utime.tv_sec + checkTime.ru_utime.tv_usec/1000000.0, (float) checkTime.ru_stime.tv_sec + checkTime.ru_stime.tv_usec/1000000.0 ); //USE wait4?
+        }else{
+            wait(&childStatus);
+        }
+
         if(WIFSIGNALED(childStatus)){ //Child terminated by a signal
-            printf("%s\n", strsignal(WTERMSIG(childStatus))); //UNFINISHED
+            printf("%s\n", strsignal(WTERMSIG(childStatus)));
         }
     }
     else{ //Child process
+        if(isTimeX == 1){//Omit the first argument
+            arguments++;
+        }
+
         if(pathType(arguments[0])){ //absolute/relative path
             execv(arguments[0], arguments);
         }else{ //environment variables
@@ -84,8 +96,20 @@ int isExit(int argumentCount, char* arguments[]){
         return 0; //Not an exit command
 }
 
-int checkTimerX(int argumentCount, char* arguments[]){
-    return 0;
+//Checks if the command is an timeX command. Return 0 if it is not, return 1 if it is, return 2 if it is an invalid timeX command
+int isTimeX(int argumentCount, char* arguments[]){
+    if(strcmp(arguments[0],"timeX") == 0){ //If the first argument is timeX
+        if(argumentCount == 1) 
+            return 2; //Incorrect exit command
+        else 
+            return 1; //With other arguments, valid timeX usage.
+    }
+    else
+        return 0; //Not an TimeX command
+}
+
+void sigint_handler(int signo){
+    
 }
 
 
@@ -110,8 +134,15 @@ int main(){
             continue;
         }
 
+        //timeX command behavior
+        int isTimeXCommand = isTimeX(argumentCount, arguments);
+        if(isTimeXCommand == 2){
+            printf("3230shell: \"timeX\" cannot be a standalone command\n");
+            continue;
+        }
+
         //Do a loop 
-            runProgram(argumentCount, arguments);
+            runProgram(argumentCount, arguments, isTimeXCommand);
             //pipe data exchange
 
         //Debug
