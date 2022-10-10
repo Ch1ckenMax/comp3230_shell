@@ -23,6 +23,7 @@ int getInput(char* arguments[], char input[]){
     int argumentCount = 0;
     printf("$$ 3230shell ## ");
     fgets(input, 1025, stdin);
+
     input[strcspn(input,"\n")] = 0;//Remove newline character at the end of string
 
     //Break input into separate arguments
@@ -44,6 +45,13 @@ int pathType(char* path){
 
 //Creates a child and use exec according to the arguments, and handle timeX command behavior
 void runProgram(int argumentCount, char* arguments[], int isTimeX){
+
+    //Add a signal mask before forking to prevent the SIGUSR1 of parent from being handled before child gets to sigwait for the signal
+    sigset_t mask;
+    sigemptyset(&mask);
+    sigaddset(&mask, SIGUSR1);
+    sigprocmask(SIG_BLOCK, &mask, NULL);
+
     //Fork and run
     pid_t childPID = fork();
     if(childPID < 0){ //Creation failure
@@ -51,6 +59,7 @@ void runProgram(int argumentCount, char* arguments[], int isTimeX){
     }
     else if(childPID > 0){ //Parent process: the shell
         int childStatus;
+        kill(childPID, SIGUSR1);//ready to go. Send SIGUSR1 to child.
         if(isTimeX == 1){ //timeX command, check time used
             struct rusage checkTime;
             wait3(&childStatus, 0, &checkTime); //also gets the user&system time the child process used and store it to checkTime
@@ -64,6 +73,9 @@ void runProgram(int argumentCount, char* arguments[], int isTimeX){
         }
     }
     else{ //Child process
+        int sig;
+        sigwait(&mask, &sig); //Wait for SIGUSR1 signal from parent before proceeding
+
         if(isTimeX == 1){//Omit the first argument
             arguments++;
         }
@@ -108,20 +120,32 @@ int isTimeX(int argumentCount, char* arguments[]){
         return 0; //Not an TimeX command
 }
 
+//Signal handler for SIGINT
 void sigint_handler(int signo){
-    
+    //print prompt message
+    printf("\n$$ 3230shell ## ");
+    fflush(stdout);
 }
 
+void sigusr1_handler(int signo){
+    //do nothing
+}
 
 int main(){
+    //Set up signal handlers
+    signal(SIGINT, sigint_handler);
+    signal(SIGUSR1, sigusr1_handler);
+
     //Initialize variables
     char input[1025]; //1024 character + termination character \0
     char* arguments[30];
     
     //Main loop body
     while(1){
+
         //Get input from user
         int argumentCount = getInput(arguments, input);
+        if(argumentCount == 0) continue; //no input?
 
         //Exit command behavior
         int isExitCommand = isExit(argumentCount, arguments); 
