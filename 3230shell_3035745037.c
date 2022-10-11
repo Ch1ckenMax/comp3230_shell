@@ -13,8 +13,10 @@
 #include <errno.h>
 
 //Prints shell message and gets input from the user. Changes the arguments array and returns the number of arguments.
-int getInput(char* arguments[], char input[]){
-    //Initialize the arguments to null
+int getInput(char* arguments[]){
+    char input[1025]; //char array for fgets. 1024 character + termination character \0
+    
+    //Initialize the arguments to null, so that exec function knwos where the arguments end
     for(int i = 0; i < 30; i++){
         arguments[i] = NULL;
     }
@@ -43,8 +45,16 @@ int pathType(char* path){
     return 0; //Environment variables
 }
 
-//Creates a child and use exec according to the arguments, and handle timeX command behavior
-void runProgram(int argumentCount, char* arguments[], int isTimeX){
+//Creates a child and use exec according to the arguments, and handle timeX command behavior. 
+//Write output of program to pipeBuffer for the next program/output to terminal.
+//pipeStart, pipeEnd indicates the position of the program in the piped command. 
+void runProgram(char* arguments[], int isTimeX, char pipeBuffer[], int* bufferSize, int pipeStart, int pipeEnd){
+
+    //Create pipe
+    int pipeC2PFileDes[2]; //communication from child to parent. used to retrieve the stdout of child.
+    int pipeP2CFileDes[2]; //communication from parent to child. used to redirect the previous command's stdout to current command's stdin.
+    pipe(pipeC2PFileDes);
+    pipe(pipeP2CFileDes);
 
     //Add a signal mask before forking to prevent the SIGUSR1 of parent from being handled before child gets to sigwait for the signal
     sigset_t mask;
@@ -56,44 +66,92 @@ void runProgram(int argumentCount, char* arguments[], int isTimeX){
     pid_t childPID = fork();
     if(childPID < 0){ //Creation failure
         printf("%s\n", "Process creation failed!");
+        return;
     }
     else if(childPID > 0){ //Parent process: the shell
         int childStatus;
+
+        close(pipeC2PFileDes[1]); //close pipe write for child to parent
+        close(pipeP2CFileDes[0]); //close pipe read for parent to child
+        if(write(pipeP2CFileDes[1], pipeBuffer, *bufferSize) == -1){
+            printf("3230Shell: %s\n", strerror(errno));
+        };
         kill(childPID, SIGUSR1);//ready to go. Send SIGUSR1 to child.
+
         if(isTimeX == 1){ //timeX command, check time used
             struct rusage checkTime;
             wait3(&childStatus, 0, &checkTime); //also gets the user&system time the child process used and store it to checkTime
-            printf("(PID)%d  (CMD)%s    (user)%0.3f s  (sys)%0.3f s\n",childPID ,arguments[1] , (float) checkTime.ru_utime.tv_sec + checkTime.ru_utime.tv_usec/1000000.0, (float) checkTime.ru_stime.tv_sec + checkTime.ru_stime.tv_usec/1000000.0 ); //USE wait4?
+            printf("(PID)%d  (CMD)%s    (user)%0.3f s  (sys)%0.3f s\n",childPID ,arguments[0] , (float) checkTime.ru_utime.tv_sec + checkTime.ru_utime.tv_usec/1000000.0, (float) checkTime.ru_stime.tv_sec + checkTime.ru_stime.tv_usec/1000000.0 ); //USE wait4?
         }else{
             wait(&childStatus);
+        }
+
+        if(pipeEnd != 1){
+            if(*bufferSize = read(pipeC2PFileDes[0], pipeBuffer, 4096) == -1){
+                printf("3230Shell: %s\n", strerror(errno));
+            }
         }
 
         if(WIFSIGNALED(childStatus)){ //Child terminated by a signal
             printf("%s\n", strsignal(WTERMSIG(childStatus)));
         }
+
+        close(pipeC2PFileDes[0]); //all done. close them.
+        close(pipeP2CFileDes[1]);
     }
     else{ //Child process
         int sig;
-        sigwait(&mask, &sig); //Wait for SIGUSR1 signal from parent before proceeding
 
-        if(isTimeX == 1){//Omit the first argument
-            arguments++;
+        //write buffer to stdin
+        if(pipeStart != 1){
+            dup2(pipeP2CFileDes[0], STDIN_FILENO); //connect stdin of child to pipe read
+            close(pipeP2CFileDes[0]);
         }
-
+        if(pipeEnd != 1){
+            dup2(pipeC2PFileDes[1], STDOUT_FILENO); //connect stdout of child to pipe write
+            close(pipeC2PFileDes[1]);
+        }
+        close(pipeP2CFileDes[1]); //Close unnecessary pipe ends
+        close(pipeC2PFileDes[0]);
+        
+        sigwait(&mask, &sig); //Wait for SIGUSR1 signal from parent before proceeding
         if(pathType(arguments[0])){ //absolute/relative path
             execv(arguments[0], arguments);
         }else{ //environment variables
             execvp(arguments[0], arguments);
         }
-        //Error! terminate the process NOT DONE YET
+        //Error! terminate the process
         printf("3230Shell: %s\n", strerror(errno));
         exit(0); //what exit state?
     }
 }
 
-//Separate commands according to "|" piping in arguments
-void commandSeparationForPipe(int argumentCount, char* arguments[]){
+//Separate commands according to "|" piping in arguments. Return -2 if starting/ending with "|", return -1 if there is two consecutive "|", or else return the number of programs. Alter programArgumentIndex to specify where the arguments of the program starts in arguments[]
+int commandSeparationForPipe(int argumentCount, char* arguments[], int isTimeX, int programArgumentIndex[]){
+    int offsetForTimeX = 0;
+    if(isTimeX == 1){//Omit the first argument by adding an offset to the indexes below
+            offsetForTimeX = 1;
+    }
 
+    //Check error cases for arguments starting with/ending with "|". This will make the logic below easier to handle.
+    if(strcmp(arguments[0 + offsetForTimeX],"|") == 0 || strcmp(arguments[argumentCount - 1],"|") == 0)
+        return -2;
+
+    int programCount = 0;
+    int argumentStart = 0 + offsetForTimeX;
+    
+    for(int i = 0 + offsetForTimeX; i < argumentCount; i++){
+        if(strcmp(arguments[i],"|") == 0){
+            if(i != 0 && arguments[i-1] == NULL) //consecutive "|"? (we turned all previous "|" with NULL)
+                return -1;
+            programArgumentIndex[programCount++] = argumentStart;
+            arguments[i] = NULL;
+            argumentStart = i + 1;
+        }
+    }
+
+    programArgumentIndex[programCount++] = argumentStart;
+    return programCount;
 }
 
 //Checks if the command is an exit command. Return 0 if it is not, return 1 if it is, return 2 if it is an invalid exit command
@@ -136,15 +194,22 @@ int main(){
     signal(SIGINT, sigint_handler);
     signal(SIGUSR1, sigusr1_handler);
 
-    //Initialize variables
-    char input[1025]; //1024 character + termination character \0
-    char* arguments[30];
+    //Initialize variables for input
+    int argumentCount;
+    char* arguments[31]; //30 arguments + 1 NULL pointer at the end
+    arguments[30] = NULL; //this shall always be NULL
+    
+    //Initialize variables for pipe
+    int programCount;
+    int programArgumentIndex[5];
+    char pipeBuffer[4096]; //enough characters right?
+    int bufferSize; //Indicates the buffer size to read by the child process to the stdin before exec, so that the content from stdout of the previous program in the pipe can be redirected to the current program
     
     //Main loop body
     while(1){
 
         //Get input from user
-        int argumentCount = getInput(arguments, input);
+        argumentCount = getInput(arguments);
         if(argumentCount == 0) continue; //no input?
 
         //Exit command behavior
@@ -165,8 +230,26 @@ int main(){
             continue;
         }
 
+        int programCount = commandSeparationForPipe(argumentCount, arguments, isTimeXCommand, programArgumentIndex);
+        if(programCount == -2){
+            printf("3230shell: should not have | at the start or end of command\n");
+            continue;
+        }
+        else if(programCount == -1){
+            printf("3230shell: should not have two consecutive | in-between command\n");
+            continue;
+        }
+
+        bufferSize = 0;
         //Do a loop 
-            runProgram(argumentCount, arguments, isTimeXCommand);
+        for(int i = 0; i < programCount; i++){
+            int pipeStart = 0, pipeEnd = 0;
+            if(i == 0) pipeStart = 1;
+            if(i == programCount - 1) pipeEnd = 1;
+            runProgram(&arguments[programArgumentIndex[i]], isTimeXCommand, pipeBuffer, &bufferSize, pipeStart, pipeEnd);
+        }
+
+            //runProgram(argumentCount, arguments, isTimeXCommand);
             //pipe data exchange
 
         //Debug
@@ -176,6 +259,18 @@ int main(){
         //printf("Argument count: %d\n", argumentCount);
         //for(int i = 0; i < argumentCount; i++){
         //    printf("%d: %s\n",i,arguments[i]);
+        //}
+        //printf("\n");
+
+        //printf("Num of programs: %d\n\n", programCount);
+        //for(int i = 0; i < programCount; i++){
+        //    printf("Program %d,\n", i);
+        //    int trasverse = programArgumentIndex[i];
+        //    while(arguments[trasverse] != NULL){
+        //        printf("%d: Argument %s\n", trasverse, arguments[trasverse]);
+        //       trasverse++;
+        //    }
+        //    printf("\n");
         //}
     }
 
