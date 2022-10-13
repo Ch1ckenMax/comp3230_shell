@@ -1,7 +1,7 @@
 //Student Name: Li Hoi Kit
 //Student No.: 3035745037
 //Development Platform: Windows WSL Ubuntu 
-//Completion state: 
+//Completion state: Everything except the bonus part
 
 
 #include <stdlib.h>
@@ -80,13 +80,6 @@ int getInput(char* arguments[], int* programCount, int programArgumentIndex[]){
         (*programCount)++;
         programArguments[*programCount] = strtok(NULL , "|");
     }
-
-    //Debug
-    //printf("Program count: %d\n", *programCount);
-    //for(int i = 0; i < *programCount; i++){
-    //    printf("%d: %s\n",i,programArguments[i]);
-    //}
-    //printf("\n");
 
     //Break program arguments into separate arguments
     for(int i = 0; i < *programCount; i++){
@@ -278,38 +271,7 @@ int main(){
             continue;
         }
 
-        //int programCount = commandSeparationForPipe(argumentCount, arguments, isTimeXCommand, programArgumentIndex);
-        //if(programCount == -2){
-        //    printf("3230shell: should not have | at the start or end of command\n");
-        //    continue;
-        //}
-        //else if(programCount == -1){
-        //    printf("3230shell: should not have two consecutive | in-between command\n");
-        //    continue;
-        //}
-
         runPrograms(arguments, programArgumentIndex, programCount, isTimeXCommand);
-
-        //Debug
-        //printf("Path type:%d\n", pathType(arguments[0]));
-
-        //printf("Arguments:\n");
-        //printf("Argument count: %d\n", argumentCount);
-        //for(int i = 0; i < argumentCount + programCount; i++){
-        //    printf("%d: %s\n",i,arguments[i]);
-        //}
-        //printf("\n");
-
-        //printf("Num of programs: %d\n\n", programCount);
-        //for(int i = 0; i < programCount; i++){
-        //    printf("Program %d,\n", i);
-        //    int trasverse = programArgumentIndex[i];
-        //    while(arguments[trasverse] != NULL){
-        //        printf("%d: Argument %s\n", trasverse, arguments[trasverse]);
-        //       trasverse++;
-        //    }
-        //    printf("\n");
-        //}
     }
 
     return 0;
