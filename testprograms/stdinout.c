@@ -7,6 +7,11 @@
 #include <errno.h>
 
 int main(){
-    char buffer[10] = {'F','U','C','K','\0'};
-    write(STDIN_FILENO, buffer,5);
+    char bufferFuck[2048];
+    printf("HELL FUCK ASS\n");
+    scanf("%s",bufferFuck);
+    printf("HELLO this is here before!\n");
+    return 0;
+    //char buffer[10] = {'F','U','C','K','\0'};
+    //write(STDIN_FILENO, buffer,5);
 }
