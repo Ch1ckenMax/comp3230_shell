@@ -184,7 +184,21 @@ void runPrograms(char* arguments[], int programArgumentIndex[], int programCount
 
     if(isTimeX == 1){ //print information for timeX command
         for(int i = 0; i < programCount; i++)
-            printf("(PID)%d  (CMD)%s    (user)%0.3f s  (sys)%0.3f s\n",childPid[i] ,arguments[programArgumentIndex[i]] , usertime[i], systime[i]);
+
+            if(pathType(arguments[programArgumentIndex[i]]) == 1){ //absolute/relative path
+                int argProgramNameStartIndex;
+                for(int j = strlen(arguments[programArgumentIndex[i]]) - 1; j >= 0; j--){ //get the program name
+                    if(arguments[programArgumentIndex[i]][j] == '/'){
+                        argProgramNameStartIndex = j + 1;
+                        break;
+                    }
+                }
+
+                printf("(PID)%d  (CMD)%s    (user)%0.3f s  (sys)%0.3f s\n",childPid[i] ,&arguments[programArgumentIndex[i]][argProgramNameStartIndex] , usertime[i], systime[i]);
+            }
+            else{
+                printf("(PID)%d  (CMD)%s    (user)%0.3f s  (sys)%0.3f s\n",childPid[i] ,arguments[programArgumentIndex[i]] , usertime[i], systime[i]);
+            }
     }
 }
 
