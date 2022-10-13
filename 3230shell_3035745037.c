@@ -54,7 +54,7 @@ int validPipe_consecutivePipe(char input[], int string_length){
 //Prints shell message and gets input from the user. Changes the arguments array and returns the number of arguments. Divide arguments into different programs. If return -1, the input starts/ends with "|". If return -2, the input has two consecutive "|".
 int getInput(char* arguments[], int* programCount, int programArgumentIndex[]){
     char input[1025]; //char array for fgets. 1024 character + termination character \0
-    char* programArguments[5];
+    char* programArguments[6];
     int argumentCount = 0;
     *programCount = 0;
     
@@ -76,7 +76,7 @@ int getInput(char* arguments[], int* programCount, int programArgumentIndex[]){
 
     //Break input into separate programs
     programArguments[*programCount] = strtok(input, "|");
-    while(programArguments[*programCount] != NULL && *programCount < 4){
+    while(programArguments[*programCount] != NULL && *programCount < 5){
         (*programCount)++;
         programArguments[*programCount] = strtok(NULL , "|");
     }
