@@ -1,7 +1,7 @@
 //Student Name: Li Hoi Kit
 //Student No.: 3035745037
 //Development Platform: Windows WSL Ubuntu 
-//Completion state: Everything except the bonus part
+//Completion state: Everything not in the bonus part + background process command &. SIGCHLD is not done.
 
 
 #include <stdlib.h>
@@ -51,8 +51,24 @@ int validPipe_consecutivePipe(char input[], int string_length){
     return 1; //Valid
 }
 
+//Checks if input is a background process (valid input with '&' at the end). Returns 1 if valid, returns 0 if no '&' in the input, returns -1 if '&' is invalid.
+int isBackground(char input[]){
+    char* symbolPos = strchr(input, '&');
+    if(symbolPos == NULL) //No '&' in string
+        return 0;
+    else{
+        symbolPos++;
+        while(*symbolPos != '\0'){
+            if(*symbolPos != ' ')
+                return -1; //invalid to have a non-space character after &
+            symbolPos++;
+        }
+        return 1; //valid as everything after '&' is space
+    }
+}
+
 //Prints shell message and gets input from the user. Changes the arguments array and returns the number of arguments. Divide arguments into different programs. If return -1, the input starts/ends with "|". If return -2, the input has two consecutive "|".
-int getInput(char* arguments[], int* programCount, int programArgumentIndex[]){
+int getInput(char* arguments[], int* programCount, int programArgumentIndex[], int* isBackgroundCommand){
     char input[1025]; //char array for fgets. 1024 character + termination character \0
     char* programArguments[6];
     int argumentCount = 0;
@@ -73,6 +89,13 @@ int getInput(char* arguments[], int* programCount, int programArgumentIndex[]){
     //Check pipe errors
     if(validPipe_Start_End(input, input_length) == 0) return -1;
     if(validPipe_consecutivePipe(input, input_length) == 0) return -2;
+
+    //& command
+    *isBackgroundCommand = isBackground(input);
+    if(*isBackgroundCommand == 1){
+        char* symbolPos = strchr(input, '&');
+        *symbolPos = '\0';
+    }
 
     //Break input into separate programs
     programArguments[*programCount] = strtok(input, "|");
@@ -103,7 +126,7 @@ int pathType(char* path){
 }
 
 //Run the programs
-void runPrograms(char* arguments[], int programArgumentIndex[], int programCount, int isTimeX){
+void runPrograms(char* arguments[], int programArgumentIndex[], int programCount, int isTimeX, int isBackgroundCommand){
 
      //Add a signal mask before forking to prevent the SIGUSR1 of parent from being handled before child gets to sigwait for the signal
     sigset_t mask;
@@ -129,8 +152,14 @@ void runPrograms(char* arguments[], int programArgumentIndex[], int programCount
             printf("%s\n", "Process creation failed!");
             return;
         } else if(childPid[i] == 0){ //child
-            if(i != 0) //only redirect prev output to input if it is not the first command
+            if(i != 0){  //only redirect prev output to input if it is not the first command
                 dup2(pipeDes[i-1][0],STDIN_FILENO);
+            }
+            else{
+                if(isBackgroundCommand == 1) //close stdin of first command if it is background command
+                    close(STDIN_FILENO);
+            }
+                
 
             if(i != programCount - 1) //only redirect output to pipe if it is not the last command
                 dup2(pipeDes[i][1],STDOUT_FILENO);
@@ -172,7 +201,8 @@ void runPrograms(char* arguments[], int programArgumentIndex[], int programCount
         struct rusage checkTime;
         int childStatus;
         kill(childPid[i], SIGUSR1);//ready to go. Send SIGUSR1 to child.
-        wait4(childPid[i] ,&childStatus, 0, &checkTime); //retrieve info
+        if(isBackgroundCommand == 0) //blocks the shell if and only if it is a foreground command
+            wait4(childPid[i] ,&childStatus, 0, &checkTime); //retrieve info
 
         usertime[i] = (float) checkTime.ru_utime.tv_sec + checkTime.ru_utime.tv_usec/1000000.0;
         systime[i] = (float) checkTime.ru_stime.tv_sec + checkTime.ru_stime.tv_usec/1000000.0;
@@ -237,6 +267,13 @@ void sigusr1_handler(int signo){
     //do nothing
 }
 
+void sigchild_handler(int signo){
+    int deadChildPid, childStatus;
+    while(deadChildPid = waitpid(-1,&childStatus,WNOHANG)){
+        printf("[%d] %s", deadChildPid, WTERMSIG(childStatus));
+    }
+}
+
 int main(){
     //Set up signal handlers
     signal(SIGINT, sigint_handler);
@@ -248,12 +285,13 @@ int main(){
     arguments[34] = NULL; //this shall always be NULL
     int programCount;
     int programArgumentIndex[5]; //Indicates which argument denotes the start of the program
+    int isBackgroundCommand;
     
     //Main loop body
     while(1){
 
         //Get input from user
-        argumentCount = getInput(arguments, &programCount, programArgumentIndex);
+        argumentCount = getInput(arguments, &programCount, programArgumentIndex, &isBackgroundCommand);
         if(argumentCount == 0) continue; //no input?
         if(argumentCount == -1){
             printf("3230shell: should not have | at the start or end of command\n");
@@ -261,6 +299,10 @@ int main(){
         }
         if(argumentCount == -2){
             printf("3230shell: should not have two consecutive | in-between command\n");
+            continue;
+        }
+        if(isBackgroundCommand == -1){
+            printf("3230shell: '&' should not appear in the middle of the command line\n");
             continue;
         }
 
@@ -279,13 +321,17 @@ int main(){
         int isTimeXCommand = isTimeX(argumentCount, arguments);
         if(isTimeXCommand == 1){
             programArgumentIndex[0]++; //first program starts at second argument
+            if(isBackgroundCommand == 1){
+                printf("3230shell: \"timeX\" cannot be run in background mode\n");
+                continue;
+            }
         }
         if(isTimeXCommand == 2){
             printf("3230shell: \"timeX\" cannot be a standalone command\n");
             continue;
         }
 
-        runPrograms(arguments, programArgumentIndex, programCount, isTimeXCommand);
+        runPrograms(arguments, programArgumentIndex, programCount, isTimeXCommand, isBackgroundCommand);
     }
 
     return 0;
