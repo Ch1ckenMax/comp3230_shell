@@ -267,13 +267,6 @@ void sigusr1_handler(int signo){
     //do nothing
 }
 
-void sigchild_handler(int signo){
-    int deadChildPid, childStatus;
-    while(deadChildPid = waitpid(-1,&childStatus,WNOHANG)){
-        printf("[%d] %s", deadChildPid, WTERMSIG(childStatus));
-    }
-}
-
 int main(){
     //Set up signal handlers
     signal(SIGINT, sigint_handler);
